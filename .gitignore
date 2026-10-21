@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Caches and trained artefacts (regenerate; do not commit)
+data/
+*.tflite
+*.keras
+# ...except the small result files every number in the paper comes from
+artifacts/**
+!artifacts/**/
+!artifacts/**/*.json
+!artifacts/**/history.csv
+artifacts/smoke*/**
+
+# ESP-IDF
+firmware/esp32s3_har/build/
+firmware/esp32s3_har/managed_components/
+firmware/esp32s3_har/sdkconfig
+firmware/esp32s3_har/sdkconfig.old
+firmware/esp32s3_har/dependencies.lock
+# model_data.cc is ~300 KB of hex and changes on every retrain
+firmware/esp32s3_har/main/generated/
+
+# Host build of the C logic tests
+firmware/build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PlatformIO
+.pio/
+firmware/esp32s3_har/sdkconfig.*
+!firmware/esp32s3_har/sdkconfig.defaults

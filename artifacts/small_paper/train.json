@@ -1,0 +1,22 @@
+{
+  "arch": "small",
+  "epochs": 300,
+  "per_epoch": 0,
+  "batch": 32,
+  "lr": 0.0001,
+  "plateau": false,
+  "seed": 0,
+  "protocol": "paper",
+  "resumed_from_epoch": 283,
+  "pool": {
+    "real": 56306,
+    "synthetic": 541111,
+    "synthetic_subcarriers": 47,
+    "synthetic_includes_test_subjects": true
+  },
+  "params": 122383,
+  "final_train_acc": 0.97077876329422,
+  "epochs_done": 300,
+  "seconds": 4554,
+  "tensorflow": "2.20.0"
+}

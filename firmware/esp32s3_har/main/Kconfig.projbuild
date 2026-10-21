@@ -1,0 +1,34 @@
+menu "WiSense HAR"
+
+    config WISENSE_ARENA_KB
+        int "TFLM tensor arena (KB, allocated in PSRAM)"
+        default 512
+        help
+            Boot prints the bytes actually used; shrink to that plus margin.
+
+    config WISENSE_RUN_BENCH
+        bool "Run the embedded test-vector benchmark at boot"
+        default y
+        help
+            Classifies held-out-subject recordings compiled into flash and
+            reports accuracy and per-inference latency. Needs no Wi-Fi.
+
+    config WISENSE_RUN_LIVE
+        bool "Classify live CSI from the Rx ESP32 over UART"
+        default y
+
+    config WISENSE_UART_RX_PIN
+        int "GPIO receiving the Rx ESP32's UART TX"
+        default 18
+
+    config WISENSE_UART_BAUD
+        int "UART baud rate (must match the collecting tool's web form)"
+        default 921600
+
+    config WISENSE_HOP
+        int "Packets between classifications once the window is full"
+        default 50
+        help
+            50 packets = 1 s at the dataset's 50 pps.
+
+endmenu

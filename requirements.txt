@@ -1,0 +1,11 @@
+# WISENSE host-side toolchain.
+# Firmware needs ESP-IDF 5.4 separately (VS Code ESP-IDF extension).
+
+tensorflow==2.18.*     # the paper's version; training + uint8 quantisation
+EMD-signal==1.6.*      # PyEMD -- EEMD augmentation
+numpy>=1.26
+pandas>=2.0
+scikit-learn>=1.4
+matplotlib>=3.8
+pyserial>=3.5          # host/csi_capture.py
+pytest>=8.0

@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.1"
+  # "TensorFlow Lite Micro for Espressif Chipsets", as in the paper.
+  espressif/esp-tflite-micro: "^1.3.4"

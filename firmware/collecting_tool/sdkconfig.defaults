@@ -1,0 +1,18 @@
+# The authors' repository ships no sdkconfig. These are the settings the tool
+# cannot run without.
+
+# CSI is compiled out of the Wi-Fi driver by default; esp_wifi_set_csi() fails without it.
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+
+# Their partitions.csv gives the app 2 MB; the default 1 MB table is too small
+# for Wi-Fi + HTTP server + the embedded web page.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# 1 kHz tick. The informer task yields one tick per packet, and the
+# packet timer runs in ticks; at the default 100 Hz neither the paper's
+# 200 pps ceiling nor steady 50 pps timing is reachable.
+CONFIG_FREERTOS_HZ=1000
+
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
