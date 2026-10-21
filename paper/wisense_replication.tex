@@ -17,6 +17,8 @@
 \usepackage{url}
 \usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit}
 
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 
@@ -53,9 +55,10 @@ release, which provides data, collection firmware and trained models but no trai
 inference or deployment code. We rebuild the model weight-exactly, recover the
 held-out subjects, train with the published hyperparameters for the full 300 epochs,
 and rebuild the two-board CSI collection system. Under the original protocol our model
-reaches 94.56\% per-subcarrier and 97.10\% majority-vote accuracy in floating point,
-exceeding the released model, and 90.87\% when quantized to 8 bits for the
-single-subcarrier on-device path. The replication also surfaces several undisclosed
+reaches 94.56\% per-subcarrier and 97.10\% majority-vote accuracy in floating point
+and 90.87\% when quantized to 8 bits for the single-subcarrier on-device path,
+statistically indistinguishable from the released model except for a 2.1-point
+gain in floating-point per-subcarrier accuracy. The replication also surfaces several undisclosed
 details that materially affect the reported numbers: synthetic training samples are
 built from the test subjects' recordings; the model is trained and evaluated per
 subcarrier; five specific subcarriers are unusable; the headline 8-bit figure equals
@@ -110,7 +113,8 @@ Our contributions are:
       verified \emph{weight-exactly} against the released checkpoints and the
       held-out subjects recovered exactly from the released training array.
 \item A full-budget reproduction under the original protocol (300 epochs, published
-      hyperparameters) that matches or exceeds the released model on all scorings.
+      hyperparameters) that matches the released model, with paired significance
+      tests.
 \item Six findings about the original evaluation and artefacts
       (Section~\ref{sec:findings}), including test-subject leakage through
       augmentation and the identity of the unnamed ``problematic'' subcarriers.
@@ -121,6 +125,49 @@ Our contributions are:
       normalization and a fit-check diagnostic, showing that the original pipeline
       does not transfer and why.
 \end{enumerate}
+
+% ===================================================================================
+\section{Related Work}
+\label{sec:related}
+% ===================================================================================
+
+\emph{CSI-based activity recognition.} Surveys trace Wi-Fi sensing from early
+model-based systems to deep learning~\cite{ma2019survey,miao2025survey}. CARM related
+CSI dynamics to body movement speed for activity recognition~\cite{wang2015carm}, and
+SenseFi benchmarked deep architectures across public Wi-Fi sensing
+datasets~\cite{yang2023sensefi}. Most of this work used network cards with modified
+firmware~\cite{halperin2011tool} and offline classification on a PC or GPU.
+
+\emph{Microcontroller platforms.} The ESP32 CSI Tool made per-packet CSI available on
+ESP32 microcontrollers~\cite{hernandez2020esp32}, and Espressif's own ESP-CSI
+framework provides collection and processing examples~\cite{espressif_esp_csi}. ESP32
+hardware has since been used for through-wall activity recognition with an ESP32-S3
+and a directional antenna~\cite{strohmayer2023throughwall} and for a public dataset of
+ten activities by eight volunteers in line-of-sight and non-line-of-sight
+setups~\cite{lim2024esp32dataset}. These works classify on a host, whereas
+Armenta-Garcia~\textit{et~al.}~\cite{armenta2025tools} report the complete chain on
+ESP32 devices, including on-device inference, and release its data and models; this
+combination is why we chose to reproduce it.
+
+\emph{Cross-domain operation.} CSI patterns depend on room, position and person, so a
+model trained in one environment often fails in another. Widar3.0 addressed this with
+a domain-independent velocity feature and reported 82.6--92.4\% cross-domain gesture
+accuracy without retraining~\cite{zheng2019widar3}; recent surveys list data
+augmentation and domain adaptation as the main remedies~\cite{miao2025survey}. The
+system we reproduce was evaluated in a single room, and Section~\ref{sec:room} tests
+it in a second.
+
+\emph{Receiver gain.} Automatic gain control scales the amplitudes of an entire packet
+and is a known source of amplitude variation unrelated to the scene. ESP-CSI provides a
+mode that fixes the receiver gain~\cite{espressif_esp_csi}; where gain cannot be fixed
+or read, dividing each packet's amplitudes by their mean removes the common factor. We
+evaluate the latter in Section~\ref{sec:room}.
+
+\emph{Leakage and reproducibility.} Kapoor and Narayanan catalogue data leakage as a
+pervasive cause of irreproducible results in machine-learning-based
+science~\cite{kapoor2023leakage}. In activity recognition the usual safeguard is a
+subject-independent split; Finding F1 shows how augmentation can defeat it even when
+the split itself is correct.
 
 % ===================================================================================
 \section{The Original System}
@@ -254,7 +301,50 @@ training-subject samples. We report three scorings of the held-out subjects:
 \end{itemize}
 
 \subsection{Hardware Reproduction}
-We built the collection system with two ESP32-D0WD-V3 development boards, one with a
+
+\begin{figure*}[!t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize, >={Stealth[length=2mm]},
+  box/.style={draw, rounded corners=2pt, align=center, minimum height=9mm, inner sep=3pt},
+  stage/.style={draw, align=center, minimum height=7mm, inner sep=2pt, fill=black!4},
+  lbl/.style={align=center, font=\scriptsize}]
+\node[box, minimum width=24mm] (tx) {ESP32 \textbf{Tx}\\ Wi-Fi station};
+\node[box, minimum width=24mm, below=11mm of tx] (rx) {ESP32 \textbf{Rx}\\ access point,\\ CSI per Tx packet};
+\draw[->, thick] (tx) -- node[lbl, left] {UDP, 50 pkt/s\\ ch.~1, 20~MHz\\ \emph{body perturbs}\\ \emph{the link}} (rx);
+
+\node[stage, right=22mm of rx, yshift=10mm] (a1) {amplitude\\ 52 subc.};
+\node[stage, right=2.5mm of a1] (a2) {850-packet\\ window};
+\node[stage, right=2.5mm of a2] (a3) {select 1 of\\ 47 subc.};
+\node[stage, right=2.5mm of a3] (a4) {uint8\\ quantize};
+\node[stage, right=2.5mm of a4] (a5) {LSTM-\\DenseNet};
+\node[right=2.5mm of a5] (o1) {activity};
+\foreach \p/\q in {a1/a2,a2/a3,a3/a4,a4/a5,a5/o1} \draw[->] (\p) -- (\q);
+\node[draw, dashed, rounded corners=2pt, inner sep=3pt, fit=(a1)(o1),
+      label={[lbl]above:Host PC (Python, TFLite)}] (host) {};
+
+\node[stage, right=22mm of rx, yshift=-10mm] (b1) {amplitude\\ 52 subc.};
+\node[stage, right=2.5mm of b1] (b2) {850-packet\\ window};
+\node[stage, right=2.5mm of b2] (b3) {select 1 of\\ 47 subc.};
+\node[stage, right=2.5mm of b3] (b4) {uint8\\ quantize};
+\node[stage, right=2.5mm of b4] (b5) {LSTM-\\DenseNet};
+\node[right=2.5mm of b5] (o2) {activity};
+\foreach \p/\q in {b1/b2,b2/b3,b3/b4,b4/b5,b5/o2} \draw[->] (\p) -- (\q);
+\node[draw, dashed, rounded corners=2pt, inner sep=3pt, fit=(b1)(o2),
+      label={[lbl]below:ESP32-S3 (C preprocessing, TFLite Micro, PSRAM arena)}] (s3) {};
+
+\draw[->] (rx.east) -- ++(6mm,0) |- node[lbl, pos=0.75, above] {USB serial} (a1.west);
+\draw[->] (rx.east) -- ++(6mm,0) |- node[lbl, pos=0.75, below] {UART} (b1.west);
+\end{tikzpicture}
+\caption{The reproduced system. The Tx sends packets to the Rx, which reports the CSI of
+each one. Classification runs either on a host PC or on an ESP32-S3; both paths apply
+the same preprocessing, verified bit-exactly between the Python and C implementations.
+The ESP32-S3 path is implemented and host-tested but not yet measured on hardware.}
+\label{fig:system}
+\end{figure*}
+
+Fig.~\ref{fig:system} shows the reproduced system. We built the collection system with
+two ESP32-D0WD-V3 development boards, one with a
 CP210x and one with a CH340 USB bridge. The released firmware ships without an
 ESP-IDF configuration; we built it with PlatformIO (ESP-IDF~5.5) and supplied the
 settings it cannot run without: CSI support enabled in the Wi-Fi driver (it is
@@ -334,11 +424,20 @@ configuration on USB serial activity.
 % ===================================================================================
 
 Table~\ref{tab:results} compares the released models and ours on the held-out
-subjects under the paper protocol. In floating point, our small model exceeds the
-released small model on all three scorings, by 2.1 points per subcarrier, 1.6 points
-for the single on-device subcarrier and 0.2 points for the vote. After 8-bit
-quantization it is 2.9 points ahead on the on-device path, and within 0.7 points per
-subcarrier and for the vote.
+subjects under the paper protocol, and Table~\ref{tab:stats} tests the differences
+between the two small models. Both are scored on the same 449 recordings, so the
+comparison is paired: we use McNemar's exact test for the two per-recording scorings
+and a recording-level bootstrap (10{,}000 resamples) for 95\% confidence intervals of
+all three. Bootstrapping recordings rather than decisions matters for the
+per-subcarrier score, because the 47 decisions of one recording are not independent.
+
+Only one difference is significant: floating-point per-subcarrier accuracy, 2.1
+points higher for our model (95\% CI +0.2 to +4.0). For the on-device single
+subcarrier and for the vote, in floating point and after quantization, every
+interval includes zero; our reproduction therefore \emph{matches} the released
+model rather than surpassing it. Point estimates for the 8-bit models in
+Table~\ref{tab:stats} come from a local TensorFlow~2.18 interpreter and differ by at
+most 0.2 points from Table~\ref{tab:results} (TensorFlow~2.20).
 
 \begin{table}[!t]
 \caption{Held-out Accuracy, Subjects s4--s9, Paper Protocol}
@@ -353,8 +452,8 @@ Released, small  & float & 0.9243 & 0.9198 & 0.9688\\
                  & uint8 & 0.9030 & 0.8797 & 0.9577\\
 Released, large  & float & 0.9544 & 0.9532 & 0.9755\\
                  & uint8 & 0.9474 & 0.9376 & 0.9777\\
-\textbf{Ours, small} & float & \textbf{0.9456} & \textbf{0.9354} & \textbf{0.9710}\\
-                     & uint8 & 0.8982 & \textbf{0.9087} & 0.9510\\
+Ours, small      & float & 0.9456 & 0.9354 & 0.9710\\
+                 & uint8 & 0.8982 & 0.9087 & 0.9510\\
 \hline
 \multicolumn{5}{l}{\footnotesize Per subcarrier: 21{,}103 decisions; others:}\\
 \multicolumn{5}{l}{\footnotesize 449 recordings. Paper protocol: test subjects'}\\
@@ -363,11 +462,41 @@ Released, large  & float & 0.9544 & 0.9532 & 0.9755\\
 \end{tabular}
 \end{table}
 
+\begin{table}[!t]
+\caption{Ours Minus Released Small Model, Paired Tests}
+\label{tab:stats}
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llcc}
+\hline
+Prec. & Scoring & Difference [95\% CI] & McNemar $p$\\
+\hline
+float & per subcarrier & $+0.021$ [$+0.002$, $+0.040$] & ---\\
+      & one subcarrier & $+0.016$ [$-0.016$, $+0.047$] & 0.40\\
+      & vote           & $+0.002$ [$-0.020$, $+0.025$] & 1.00\\
+uint8 & per subcarrier & $-0.005$ [$-0.027$, $+0.016$] & ---\\
+      & one subcarrier & $+0.031$ [$-0.005$, $+0.069$] & 0.12\\
+      & vote           & $-0.007$ [$-0.033$, $+0.020$] & 0.74\\
+\hline
+\multicolumn{4}{l}{\footnotesize CI: recording-level bootstrap. McNemar: exact,
+two-sided,}\\
+\multicolumn{4}{l}{\footnotesize per recording (not defined per subcarrier).}
+\end{tabular}
+\end{table}
+
 Per-class recall of our floating-point model per subcarrier is 0.96 (FA), 0.94 (GU),
 0.95 (LD), 0.91 (SD) and 0.97 (WA). Quantization costs 4.7 points per subcarrier,
 consistent with the paper's reported loss of about 4\%, and falls unevenly: sit-down
 recall drops from 0.91 to 0.76, mostly to get-up and fall. The 8-bit model is
 322{,}320 bytes.
+
+Enlarging the calibration set does not reduce this loss; it increases it. Re-quantizing
+the same trained model with 300, 1{,}000 and 3{,}000 calibration samples gives 0.898,
+0.877 and 0.861 per subcarrier, 0.911, 0.891 and 0.878 on the single on-device
+subcarrier, and 0.951, 0.940 and 0.940 by vote. The converter sets each activation range
+from the extremes it observes, so more samples admit rarer outliers, widen the ranges and
+coarsen the 8-bit steps. Recovering the loss therefore needs quantization-aware training
+or outlier-robust range estimation rather than more calibration data.
 
 Fig.~\ref{fig:training} shows training accuracy across the three resumed sessions
 and held-out scores at the session boundaries. Training accuracy rose smoothly to
@@ -381,8 +510,12 @@ with held-out per-subcarrier accuracy at the end of each session.}
 \label{fig:training}
 \end{figure}
 
-\subsection{Cross-Environment Test}
+\subsection{Preliminary Cross-Environment Test}
 \label{sec:room}
+This test is preliminary: one subject, one session and a link placement that, as shown
+below, captured little subject-induced variation. We report it because it quantifies
+the failure mode and identifies its cause, not as a measure of achievable
+cross-environment accuracy.
 On our hardware the host classifies a live 850-packet window every second in about
 1.3~ms with the 8-bit model on a laptop CPU. To quantify transfer to a new
 environment, one author recorded the five activities and an additional empty-room
@@ -453,10 +586,15 @@ original preprocessing and is reported as a candidate addition to it.
 \emph{The reproduced numbers are not subject-independent.} Because of F1, both the
 original results and our Table~\ref{tab:results} measure performance on people whose
 recombined recordings were trained on. The clean protocol, which removes this
-leakage, is implemented but has only been run at a reduced CPU budget (8 augmented
-subcarriers, 150 epochs of 8{,}000 samples), where it reached 0.49 per-subcarrier
-accuracy while still improving; that run is under-trained and not comparable. A
-full-budget clean run is the most important next measurement.
+leakage, has so far been run only at a reduced CPU budget (8 augmented subcarriers,
+150 epochs of 8{,}000 samples), where it reached 0.49 per-subcarrier accuracy while
+still improving; that run is under-trained and not comparable. A full-budget clean
+run---the paper's settings, 449{,}978 training samples, two seeds---is in progress
+and is the most important pending measurement.
+
+\emph{Variance across runs.} Our paper-protocol result is a single training run.
+Repeated runs with different seeds are needed to separate the differences in
+Table~\ref{tab:stats} from run-to-run variation.
 
 \emph{Environment dependence.} The original data come from one room, and our test in
 a second room (Section~\ref{sec:room}) shows near-chance transfer. That test is itself
@@ -488,8 +626,11 @@ scripts retain 52, which would add the five noisy subcarriers to training.
       event'' class that includes background movement by other people, with each
       activity recorded both alone and with background activity. Recording
       volunteers other than the authors requires ethics approval.
-\item Multiple seeds, the large model, a 52-subcarrier variant and a larger
-      quantization calibration set.
+\item Multiple seeds, the large model and a 52-subcarrier variant.
+\item Quantization-aware training, since a larger calibration set increases rather than
+      reduces the 8-bit loss.
+\item Gain normalization evaluated on the original dataset under both protocols, to
+      establish whether it helps beyond the new-room setting.
 \end{enumerate}
 
 % ===================================================================================
@@ -497,7 +638,7 @@ scripts retain 52, which would add the five noisy subcarriers to training.
 % ===================================================================================
 
 We reproduced an embedded Wi-Fi sensing pipeline for human activity recognition from
-its public release and, under the original protocol, matched or exceeded the
+its public release and, under the original protocol, statistically matched the
 released model. The replication also showed that the original evaluation trains on
 augmented recordings of its test subjects, that the model is trained and scored per
 subcarrier, which five subcarriers are excluded and why, and that the headline 8-bit
@@ -509,8 +650,18 @@ are necessary to interpret the published numbers and to compare future work fair
 We release the reconstructed pipeline so that the leak-free evaluation can be
 completed and extended.
 
+\section*{Ethics Statement}
+The original dataset was collected by Armenta-Garcia~\textit{et~al.} with participants'
+informed consent~\cite{armenta2025tools}; we use it as released. The cross-environment
+recordings of Section~\ref{sec:room} were made by one of the authors, who was the only
+participant and consented to the recording and its publication. Only Wi-Fi channel
+measurements were recorded---no video, audio or identifying information. Collection
+involving any other participant will be submitted for approval to the institutional
+ethics committee of Thapar Institute of Engineering \& Technology before it begins.
+
 \section*{Code and Data Availability}
-The code is available from the authors on request. It comprises preprocessing,
+The code is publicly available under the MIT license at
+\url{https://github.com/tetraethylmethane/WISENSE}. It comprises preprocessing,
 split recovery, the probe of the released models, augmentation, training,
 quantization, evaluation, host capture, the build configuration and patch for the
 collection firmware, and the ESP32-S3 firmware with its host tests. The dataset and
