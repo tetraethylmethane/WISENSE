@@ -59,16 +59,18 @@ reaches 94.56\% per-subcarrier and 97.10\% majority-vote accuracy in floating po
 and 90.87\% when quantized to 8 bits for the single-subcarrier on-device path,
 statistically indistinguishable from the released model except for a 2.1-point
 gain in floating-point per-subcarrier accuracy. The replication also surfaces several undisclosed
-details that materially affect the reported numbers: synthetic training samples are
-built from the test subjects' recordings; the model is trained and evaluated per
+details that materially affect the reported numbers. Most importantly, synthetic
+training samples are built from the test subjects' recordings: removing this leakage
+and otherwise training identically, accuracy on the held-out subjects falls to
+52.6\% per subcarrier and 57.6\% by majority vote (mean of two seeds), while
+training accuracy remains 97--98\%. In addition, the model is trained and evaluated per
 subcarrier; five specific subcarriers are unusable; the headline 8-bit figure equals
 the released model's floating-point score; and the released quantized model occupies
 322~kB rather than 127~kB. In a new room, the model falls to near chance (26.8\%
 per subcarrier) and is not recovered by fine-tuning or by the original augmentation;
 a model-free motion-energy analysis shows that most of the signal variation there is
 not caused by the subject. We release the reconstructed pipeline, host-verified
-embedded preprocessing and a PlatformIO build of the collection firmware to support a
-leak-free re-evaluation.
+embedded preprocessing and a PlatformIO build of the collection firmware.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -121,6 +123,9 @@ Our contributions are:
 \item A working reproduction of the two-board ESP32 CSI collection system, with the
       configuration and robustness fixes the released firmware needs, and embedded
       preprocessing verified bit-exactly against the host implementation.
+\item The first subject-independent evaluation of this pipeline: with the leakage
+      removed and everything else unchanged, held-out accuracy falls from 94.6\% to
+      52.6\% per subcarrier, consistent across two seeds.
 \item A cross-environment test in a new room, with fine-tuning, augmentation, gain
       normalization and a fit-check diagnostic, showing that the original pipeline
       does not transfer and why.
@@ -271,7 +276,7 @@ $(850, 1)$ sample. The augmentation reproduces the authors' scripts exactly (EEM
 PyEMD~\cite{laszuk2017pyemd}, 100 trials, noise seed 5, 7 modes plus residue, all within-subject, within-activity
 pairs), including their use of all 22 subjects; we call this the \emph{paper
 protocol}. A \emph{clean protocol} that augments only training subjects is
-implemented but not yet evaluated at full budget (Section~\ref{sec:discussion}).
+evaluated in Section~\ref{sec:clean}.
 
 EEMD of $1{,}647$ recordings $\times$ 47 subcarriers (77{,}409 series of 850 samples)
 took about 5~s per series, over a day of wall-clock time on a 10-core laptop CPU;
@@ -376,7 +381,8 @@ confirm it: 22 subjects $\times$ 5 activities $\times \binom{15}{2} \approx 11{,
 against the reported 11{,}513, whereas the 16 training subjects alone would yield
 about 8{,}400. Our reproduction of the scripts yields exactly 11{,}513 synthetic
 recordings. Results under this protocol, including ours in Table~\ref{tab:results},
-measure accuracy on people whose data contributed to training.
+measure accuracy on people whose data contributed to training. Removing the leakage
+lowers held-out accuracy by about 40 points (Section~\ref{sec:clean}).
 
 \subsubsection*{F2 -- The model is trained and evaluated per subcarrier}
 Although deployment uses a single subcarrier, training treats each subcarrier of
@@ -510,6 +516,54 @@ with held-out per-subcarrier accuracy at the end of each session.}
 \label{fig:training}
 \end{figure}
 
+\subsection{Subject-Independent Evaluation}
+\label{sec:clean}
+To measure what the leakage of F1 contributes, we repeated training under the clean
+protocol: identical in every respect---data, preprocessing, 47 subcarriers, EEMD
+parameters, model, optimizer, batch size and 300 full epochs---except that synthetic
+samples are built from the 16 training subjects only (449{,}978 training samples
+instead of 597{,}417). We trained two runs with different seeds, one per GPU of a
+Kaggle T4~$\times$2 session, resumed once from per-epoch checkpoints.
+Table~\ref{tab:clean} compares the two protocols.
+
+\begin{table}[!t]
+\caption{Held-out Accuracy by Protocol, Small Model}
+\label{tab:clean}
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llccc}
+\hline
+Protocol & Prec. & Per subc. & One subc. & Vote\\
+\hline
+Paper (leaky)  & float & 0.946 & 0.935 & 0.971\\
+               & uint8 & 0.898 & 0.909 & 0.951\\
+Clean          & float & 0.526 & 0.533 & 0.576\\
+               & & {\scriptsize(0.512--0.541)} & {\scriptsize(0.517--0.550)} & {\scriptsize(0.559--0.592)}\\
+               & uint8 & 0.475 & 0.470 & 0.515\\
+               & & {\scriptsize(0.474--0.477)} & {\scriptsize(0.452--0.488)} & {\scriptsize(0.510--0.519)}\\
+\hline
+\multicolumn{5}{l}{\footnotesize Paper protocol: one run. Clean: mean of two seeds,}\\
+\multicolumn{5}{l}{\footnotesize range in parentheses. Chance level: 0.20.}
+\end{tabular}
+\end{table}
+
+Removing the leakage lowers held-out accuracy by 42 points per subcarrier and 39
+points by vote, to 52.6\% and 57.6\%. The model has not stopped learning: training
+accuracy reaches 0.973 and 0.980 for the two seeds, comparable to the paper protocol's
+0.971. It fits the people it is trained on and generalizes poorly to new ones. The two
+seeds agree to within 3.3 points on every scoring, so the gap is not run-to-run
+variation. Per-class recall shows where generalization fails: walking is recognized
+best (0.80 and 0.88 per subcarrier), lying down worst (0.39 and 0.17). A plausible
+explanation, which our data cannot confirm, is that walking produces sustained motion
+across the recording window while the other activities are brief transitions whose
+CSI signature depends more on the individual. Quantization costs a further 5--6
+points under the clean protocol.
+
+These results mean that the original accuracy figures, and our reproduction of them,
+describe performance on people whose movements the model has effectively seen. For
+a deployed sensor, which must work for people it was not trained on, the
+subject-independent figures are the relevant ones.
+
 \subsection{Preliminary Cross-Environment Test}
 \label{sec:room}
 This test is preliminary: one subject, one session and a link placement that, as shown
@@ -583,18 +637,17 @@ original preprocessing and is reported as a candidate addition to it.
 \label{sec:discussion}
 % ===================================================================================
 
-\emph{The reproduced numbers are not subject-independent.} Because of F1, both the
-original results and our Table~\ref{tab:results} measure performance on people whose
-recombined recordings were trained on. The clean protocol, which removes this
-leakage, has so far been run only at a reduced CPU budget (8 augmented subcarriers,
-150 epochs of 8{,}000 samples), where it reached 0.49 per-subcarrier accuracy while
-still improving; that run is under-trained and not comparable. A full-budget clean
-run---the paper's settings, 449{,}978 training samples, two seeds---is in progress
-and is the most important pending measurement.
+\emph{Generalization to new people.} Section~\ref{sec:clean} shows that the
+pipeline, trained as published but without leakage, recognizes the activities of new
+people at 52.6\% per subcarrier. The original figures, and Table~\ref{tab:results},
+therefore describe performance on people represented in training. Subject-independent
+accuracy is the open problem for this design; the per-class results suggest that
+transition activities, not walking, are where it fails.
 
-\emph{Variance across runs.} Our paper-protocol result is a single training run.
-Repeated runs with different seeds are needed to separate the differences in
-Table~\ref{tab:stats} from run-to-run variation.
+\emph{Variance across runs.} The clean protocol was run with two seeds, which agree
+to within 3.3 points. The paper-protocol result is a single run, so the differences in
+Table~\ref{tab:stats}, most of which are not significant, may also partly reflect
+run-to-run variation.
 
 \emph{Environment dependence.} The original data come from one room, and our test in
 a second room (Section~\ref{sec:room}) shows near-chance transfer. That test is itself
@@ -610,8 +663,9 @@ on an ESP32-S3, so the reported 232~ms and 127~kB remain unverified; the firmwar
 written and its preprocessing is host-verified, but has not been built and run on
 the device.
 
-\emph{Scope of the replication.} We trained the small model only, with one seed and
-one calibration set of 300 samples. We used the paper's 47 subcarriers; the released
+\emph{Scope of the replication.} We trained the small model only, with one seed under
+the paper protocol and two under the clean protocol, and one calibration set of 300
+samples. We used the paper's 47 subcarriers; the released
 scripts retain 52, which would add the five noisy subcarriers to training.
 
 % ===================================================================================
@@ -619,7 +673,9 @@ scripts retain 52, which would add the five noisy subcarriers to training.
 % ===================================================================================
 
 \begin{enumerate}
-\item Full-budget training and evaluation under the clean protocol.
+\item Methods for subject-independent accuracy: subject-adversarial or
+      domain-invariant training, and per-user calibration with a few labeled
+      repetitions, evaluated under the clean protocol.
 \item On-device measurement of latency, arena size and accuracy on an ESP32-S3.
 \item A second cross-environment collection with controlled link geometry, verified
       beforehand with the motion-energy check; 15 repetitions per class; and a ``no
@@ -640,15 +696,17 @@ scripts retain 52, which would add the five noisy subcarriers to training.
 We reproduced an embedded Wi-Fi sensing pipeline for human activity recognition from
 its public release and, under the original protocol, statistically matched the
 released model. The replication also showed that the original evaluation trains on
-augmented recordings of its test subjects, that the model is trained and scored per
+augmented recordings of its test subjects, and that removing this leakage---with
+everything else unchanged---lowers accuracy on the held-out subjects from 94.6\% to
+52.6\% per subcarrier. It further showed that the model is trained and scored per
 subcarrier, which five subcarriers are excluded and why, and that the headline 8-bit
 accuracy and model size do not correspond to the released artefacts. In a second room
 the model did not transfer, and neither fine-tuning nor the original augmentation
 recovered it; most of the signal variation there was unrelated to the subject. These
 details
 are necessary to interpret the published numbers and to compare future work fairly.
-We release the reconstructed pipeline so that the leak-free evaluation can be
-completed and extended.
+We release the reconstructed pipeline so that both protocols can be reproduced and
+subject-independent methods compared against a common baseline.
 
 \section*{Ethics Statement}
 The original dataset was collected by Armenta-Garcia~\textit{et~al.} with participants'

@@ -86,8 +86,22 @@ authors' scripts do. This is the comparable number, *not* a clean held-out score
   score (finding 4), so the like-for-like uint8 target is the released model's, above.
 - Model file 322 KB uint8, same as the released 325 KB — not the 127 kB the paper states.
 
-The clean protocol (synthetic samples from training subjects only) has not been trained at
-full budget yet; a CPU-budget run reached ~0.49 and was still climbing.
+**Clean protocol** — identical training, but synthetic samples come from the 16 training
+subjects only, so the score is subject-independent. Two seeds, 300 epochs each
+(`artifacts/small_clean_s0`, `small_clean_s1`):
+
+| | per subcarrier | one subcarrier (device) | vote over 47 |
+|---|---|---|---|
+| **Clean, float** (mean, range) | **0.526** (0.512–0.541) | **0.533** (0.517–0.550) | **0.576** (0.559–0.592) |
+| Clean, uint8 | 0.475 (0.474–0.477) | 0.470 (0.452–0.488) | 0.515 (0.510–0.519) |
+
+**Removing the leak costs about 40 points.** Training accuracy is still 97–98%: the model fits
+the people it trains on and generalises poorly to new ones. Walking transfers best (0.80–0.88
+recall), lying down worst (0.17–0.39).
+
+Our paper-protocol model is statistically indistinguishable from the released one except for
+float per-subcarrier accuracy (+2.1 points, 95% CI +0.2 to +4.0; `tools/stats.py`). A larger
+quantisation calibration set *increases* the 8-bit loss (`tools/quant_study.py`).
 
 ## Quick start (host, no hardware)
 
