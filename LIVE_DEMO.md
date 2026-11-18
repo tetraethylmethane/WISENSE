@@ -12,7 +12,7 @@ scores 52.6%, and in a new room 33.7% (chance is 20%). There are two honest ways
 | | **A. Calibrate first (recommended)** | **B. Run as-is** |
 |---|---|---|
 | What you do | Record the demo person in the demo room, fine-tune on it | Run the released model live |
-| Expect | Mostly correct | Mostly wrong |
+| Expect | Better than B, but untested: our one room fine-tune reached 33.7%, recorded with bad board placement (step 2) | Mostly wrong |
 | Say on screen | "Calibrated to this person and room" | "This is our 52.6% / 33.7% finding, live" |
 
 Also:
@@ -24,6 +24,8 @@ Also:
 - **Consent:** recording anyone other than yourselves needs their informed consent, and
   possibly ethics approval.
 - Nobody else should move near the boards during a trial.
+
+Whichever option you use, do a dry run first and report the accuracy you actually get.
 
 ## Steps
 
